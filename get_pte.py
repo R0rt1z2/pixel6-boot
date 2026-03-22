@@ -5,13 +5,15 @@ import struct
 import keystone
 
 ABL_LOAD_ADDRESS = 0xFFFF0000F8800000
-download_buffer = 0xFFFF000090700000
-MEMORY_START = 0xFFFF0000F8000000
-MEMORY_SIZE = 200 * 1024 * 1024
-STACK_START = MEMORY_START + MEMORY_SIZE - 0x1000
-INVALID_ADDR = 0xDEADBEEFDEADBEEF
-kernel_aspace = 0xFFFF0000F8ACBC88
+download_buffer  = 0xFFFF000090700000
+MEMORY_START     = 0xFFFF0000F8000000
+MEMORY_SIZE      = 200 * 1024 * 1024
+STACK_START      = MEMORY_START + MEMORY_SIZE - 0x1000
+INVALID_ADDR     = 0xDEADBEEFDEADBEEF
+kernel_aspace    = 0xFFFF0000F8BBCC50
 
+bootloader = 'bin/abl_komodo.bin'
+memdump    = 'bin/memdump.bin'
 
 def gen_shellcode(data, address):
     ks = keystone.Ks(keystone.KS_ARCH_ARM64, keystone.KS_MODE_LITTLE_ENDIAN)
@@ -28,20 +30,20 @@ def hook_mem_read(uc, uc_mem_type, addr, size, value, user_data):
     return True
 
 
-# Auto allocate pages of memory of size 10Mega on invalid memory access
 def hook_mem_invalid_auto(uc, uc_mem_type, addr, size, value, user_data):
     pc = uc.reg_read(UC_ARM64_REG_PC)
     start = addr & ~(10 * 1024 * 1024 - 1)
     if user_data:
-        print(
-            f"~~~~~~~~~~~~~~@{pc:x}                 mu.mem_map(0x{start:08x}, 10*1024*1024)"
-        )
-    uc.mem_map(start, 10 * 1024 * 1024)
+        print('~~~~~~~~~~~~~~@%x                 mu.mem_map(0x%08x, 10*1024*1024)' % (pc, start))
+    try:
+        uc.mem_map(start, 10 * 1024 * 1024)
+    except:
+        pass
     return True
 
 
 def load_dumped_memory(mu):
-    with open("memory_0xFFFF0000F8990000", "rb") as f:
+    with open(memdump, "rb") as f:
         data = f.read()
         mu.mem_write(0xFFFF0000F8990000, data)
 
@@ -49,7 +51,7 @@ def load_dumped_memory(mu):
 def mu_loader():
 
     # MAP file to offset
-    with open("abl_210817", "rb") as f:
+    with open(bootloader, "rb") as f:
         data = f.read()
 
         try:
@@ -107,7 +109,13 @@ def get_pte_exec(pte):
 
 
 def get_pte(vaddr):
-    arch_mmu_query = 0xFFFF0000F880F5A0
+    arch_mmu_query = 0xffff0000f8817d04
+    pte_read_pcs = {
+        0xffff0000f8817dc4,
+        0xffff0000f8817df4,
+        0xffff0000f8817e24,
+        0xffff0000f8817e54,
+    }
     mu = mu_loader()
     if not mu:
         return
@@ -125,9 +133,10 @@ def get_pte(vaddr):
     if x0 == 0xFFFFFFFE:
         return 0, 0, 0, b"\x00" * 8
 
-    # return last access of pte
-    return list(filter(lambda k: k[0] == 0xFFFF0000F880F690, access))[-1]
-
+    matches = list(filter(lambda k: k[0] in pte_read_pcs, access))
+    if not matches:
+        return 0, 0, 0, b"\x00" * 8
+    return matches[-1]
 
 def get_pte_info(vaddr):
     pc, addr, size, value = get_pte(vaddr)
