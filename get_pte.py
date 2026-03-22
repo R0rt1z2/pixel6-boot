@@ -145,8 +145,9 @@ def get_pte_info(vaddr):
         f"addr:{addr:x} pte:{pte:x} access:{get_pte_access(pte)} exec:{get_pte_exec(pte)}"
     )
 
-
 if __name__ == "__main__":
     import fire
-
-    fire.Fire(get_pte_info)
+    fire.Fire({
+        "get_pte": get_pte_info,
+        "read": read
+    })
