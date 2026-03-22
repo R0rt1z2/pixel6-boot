@@ -19,6 +19,6 @@ if [ -z "$offset" ]; then
     exit 1
 fi
 
-tail -c +"$((offset + 0xC00))" "$INPUT" > "$OUTPUT"
+tail -c +"$((offset + 0xC00 + 1))" "$INPUT" > "$OUTPUT"
 
 sha256sum "$OUTPUT"
